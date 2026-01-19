@@ -1,0 +1,58 @@
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - searxng-net
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+
+  mcp-server:
+    build: .
+    container_name: searxng-mcp-server
+    environment:
+      - SEARXNG_URL=http://searxng:8080
+      - MCP_PORT=8000
+      # Summarization (optional - set SUMMARIZE_ENABLED=true to enable)
+      - SUMMARIZE_ENABLED=true
+      - SUMMARIZE_API_URL=http://host.docker.internal:1234/v1
+      - SUMMARIZE_API_KEY=
+      - SUMMARIZE_MODEL=qwen3-vl-8b
+      - SUMMARIZE_MAX_INPUT_TOKENS=32000
+      - SUMMARIZE_MAX_OUTPUT_TOKENS=8000
+      - SUMMARIZE_TIMEOUT=120
+      # Playwright MCP token (browse function only works in local/stdio mode, not Docker)
+      - PLAYWRIGHT_MCP_TOKEN=
+    depends_on:
+      - searxng
+    networks:
+      - searxng-net
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:alpine
+    container_name: mcp-proxy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - mcp-server
+    networks:
+      - searxng-net
+    restart: unless-stopped
+
+networks:
+  searxng-net:
+    driver: bridge

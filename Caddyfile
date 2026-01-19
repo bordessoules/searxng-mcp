@@ -1,0 +1,5 @@
+:8000 {
+    reverse_proxy mcp-server:8000 {
+        header_up Host localhost:8000
+    }
+}

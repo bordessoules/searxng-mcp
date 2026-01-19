@@ -1,0 +1,25 @@
+# MCP Gateway Dependencies
+
+# Core MCP
+mcp[cli]>=1.0.0
+
+# HTTP client
+httpx>=0.27.0
+
+# Web content extraction
+markdownify>=0.13.0
+trafilatura>=2.0.0
+readability-lxml>=0.8.1
+
+# Server
+uvicorn>=0.30.0
+starlette>=0.38.0
+
+# Browser automation (for Playwright MCP client)
+# Note: Playwright MCP is called via npx, not imported directly
+
+# Document parsing
+docling>=2.0.0
+
+# Optional: for faster inference
+# torch>=2.0.0

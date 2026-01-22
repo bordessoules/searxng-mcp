@@ -14,7 +14,7 @@ from mcp.server.fastmcp import FastMCP
 import core
 from core.config import SERVER_PORT
 
-mcp = FastMCP("mcp-gateway")
+mcp = FastMCP("mcp-gateway", host="0.0.0.0")
 
 # ASGI app for uvicorn compatibility
 app = mcp.sse_app()

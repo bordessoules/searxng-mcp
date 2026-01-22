@@ -1,0 +1,87 @@
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - searxng-net
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+
+  # Chrome with CDP for browser automation (browserless)
+  # Debug viewer at http://localhost:3000 (live browser view)
+  # CDP endpoint at chrome-vnc:3000 for Playwright automation
+  chrome-vnc:
+    image: browserless/chrome:latest
+    container_name: chrome-vnc
+    ports:
+      - "3000:3000"   # Chrome + debugger UI (http://localhost:3000)
+    environment:
+      - CONNECTION_TIMEOUT=600000
+      - MAX_CONCURRENT_SESSIONS=1
+      - ENABLE_DEBUGGER=true
+      - PREBOOT_CHROME=true
+      - KEEP_ALIVE=true
+      - CHROME_REFRESH_TIME=86400000
+      - DEFAULT_LAUNCH_ARGS=["--disable-dev-shm-usage","--no-sandbox"]
+    networks:
+      - searxng-net
+    restart: unless-stopped
+    shm_size: '2gb'  # Prevent Chrome crashes from shared memory issues
+
+  mcp-server:
+    build: .
+    container_name: searxng-mcp-server
+    environment:
+      - SEARXNG_URL=http://searxng:8080
+      - MCP_PORT=8000
+      # Unified VLM: Qwen3-VL-8B for web pages, images, AND documents
+      - SUMMARIZE_ENABLED=true
+      - SUMMARIZE_API_URL=http://bluefin:1234/v1
+      - SUMMARIZE_API_KEY=
+      - SUMMARIZE_MODEL=qwen/qwen3-vl-8b
+      - SUMMARIZE_MAX_INPUT_TOKENS=32000
+      - SUMMARIZE_MAX_OUTPUT_TOKENS=8000
+      - SUMMARIZE_TIMEOUT=120
+      # Docling VLM: uses same model for document OCR/layout (inherits from SUMMARIZE_*)
+      - DOCLING_USE_VLM=true
+      # Chrome CDP browser (connects to browserless container)
+      - CHROME_CDP_URL=http://chrome-vnc:3000
+      - USE_CDP_BROWSER=true
+    depends_on:
+      - searxng
+      - chrome-vnc
+    networks:
+      - searxng-net
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:alpine
+    container_name: mcp-proxy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - mcp-server
+    networks:
+      - searxng-net
+    restart: unless-stopped
+
+networks:
+  searxng-net:
+    driver: bridge
+
+# Note: Chrome profile persistence can be added later with proper permissions
+# volumes:
+#   chrome-data:  # Persistent Chrome profile (logins, cookies, extensions)

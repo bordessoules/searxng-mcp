@@ -12,9 +12,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server.fastmcp import FastMCP
 import core
-from core.config import SERVER_NAME, SERVER_PORT
+from core.config import SERVER_PORT
 
-mcp = FastMCP(SERVER_NAME)
+mcp = FastMCP("mcp-gateway")
+
+# ASGI app for uvicorn compatibility
+app = mcp.sse_app()
 
 
 @mcp.tool()

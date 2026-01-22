@@ -9,13 +9,12 @@ Exports:
 
 from .router import route
 from .search import search as _search
-from . import http, browser, document, image
+from . import browser, document, image
 
 _HANDLERS = {
     "image": image.fetch,
     "document": document.fetch,
     "browser": browser.fetch,
-    "http": http.fetch,
 }
 
 
@@ -28,10 +27,9 @@ async def get(url: str, prompt: str | None = None) -> str:
     """
     Get content from any URL. Auto-routes based on content type.
 
-    - Images (.png, .jpg) -> Vision model (Qwen3-VL)
+    - Images (.png, .jpg) -> Vision model description
     - Documents (.pdf, .docx) -> Docling parser
-    - JS-heavy sites (amazon, etc.) -> Chrome browser
-    - Everything else -> Fast HTTP fetch
+    - Web pages -> Browser + Vision model (consistent quality)
     """
     handler = _HANDLERS[route(url)]
     return await handler(url, prompt)

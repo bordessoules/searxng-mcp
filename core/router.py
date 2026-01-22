@@ -6,14 +6,8 @@ from pathlib import Path
 IMAGE_EXTENSIONS = frozenset({'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff'})
 DOCUMENT_EXTENSIONS = frozenset({'.pdf', '.docx', '.pptx', '.xlsx', '.doc', '.xls', '.ppt'})
 
-JS_HEAVY_DOMAINS = (
-    "aliexpress", "amazon", "ebay", "taobao", "alibaba",
-    "walmart", "target", "bestbuy", "newegg", "etsy",
-    "facebook", "instagram", "twitter", "x.com", "tiktok",
-    "linkedin", "reddit", "pinterest",
-    "airbnb", "booking", "expedia", "tripadvisor",
-    "youtube", "netflix", "spotify", "figma", "notion",
-)
+# URL patterns that indicate PDFs (e.g., arxiv.org/pdf/...)
+PDF_URL_PATTERNS = ('/pdf/', '/pdfs/', '.pdf')
 
 
 def _get_extension(url: str) -> str:
@@ -22,25 +16,25 @@ def _get_extension(url: str) -> str:
     return Path(path).suffix.lower()
 
 
-def _get_domain(url: str) -> str:
-    """Extract domain from URL."""
-    return urlparse(url).netloc.lower()
+def _is_pdf_url(url: str) -> bool:
+    """Check if URL looks like a PDF (even without .pdf extension)."""
+    url_lower = url.lower()
+    return any(pattern in url_lower for pattern in PDF_URL_PATTERNS)
 
 
 def route(url: str) -> str:
     """
     Determine which handler to use for a URL.
 
-    Returns: 'image', 'document', 'browser', or 'http'
+    Returns: 'image', 'document', or 'browser'
     """
     ext = _get_extension(url)
     if ext in IMAGE_EXTENSIONS:
         return "image"
     if ext in DOCUMENT_EXTENSIONS:
         return "document"
-
-    domain = _get_domain(url)
-    if any(d in domain for d in JS_HEAVY_DOMAINS):
-        return "browser"
-
-    return "http"
+    # Check for PDF-like URLs without extension (e.g., arxiv.org/pdf/...)
+    if _is_pdf_url(url):
+        return "document"
+    # All web pages use browser + vision for consistent quality
+    return "browser"

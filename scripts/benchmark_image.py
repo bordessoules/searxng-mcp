@@ -10,9 +10,14 @@ import time
 import warnings
 from pathlib import Path
 
+# Add parent directory to path so we can import core module
+_script_dir = Path(__file__).parent
+_project_root = _script_dir.parent
+sys.path.insert(0, str(_project_root))
+
 # Setup before imports that trigger logging
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(_project_root)
 os.environ["RAPIDOCR_LOG_LEVEL"] = "ERROR"
 warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.ERROR)
@@ -31,7 +36,7 @@ OUTPUT_PREVIEW_LENGTH = 400
 async def download_image(url: str) -> tuple[bytes, float]:
     """Download image and return bytes with elapsed time."""
     start = time.perf_counter()
-    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
         resp = await client.get(url)
         resp.raise_for_status()
     return resp.content, time.perf_counter() - start

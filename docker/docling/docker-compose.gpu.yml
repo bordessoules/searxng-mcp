@@ -1,0 +1,52 @@
+# Dual Docling: CPU (port 8001) + GPU with CUDA (port 8002)
+# Usage: docker compose -f docker-compose.gpu.yml up -d
+#
+# GPU service uses docling-serve with CUDA acceleration.
+# VLM picture descriptions are configured in the MCP gateway (core/document.py),
+# which calls the remote Qwen 3 VL model on bluefin via Tailscale.
+
+services:
+  # Existing CPU service (keep as fallback)
+  docling-cpu:
+    image: python:3.12-slim
+    container_name: docling-cpu
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./app:/app
+      - docling-cache-cpu:/root/.cache/docling
+    working_dir: /app
+    command: >
+      bash -c "apt-get update &&
+      apt-get install -y --no-install-recommends libxcb1 libx11-6 libxext6 libxrender1 libglib2.0-0 libgl1 libsm6 libice6 &&
+      rm -rf /var/lib/apt/lists/* &&
+      pip install --no-cache-dir docling uvicorn fastapi httpx &&
+      python server.py"
+    restart: unless-stopped
+
+  # GPU service with CUDA + remote Qwen VL
+  docling-gpu:
+    image: ghcr.io/docling-project/docling-serve-cu128:latest
+    container_name: docling-qwen-gpu
+    ports:
+      - "8002:5001"
+    environment:
+      # CUDA optimizations
+      - DOCLING_CUDA_USE_FLASH_ATTENTION2=1
+      - OMP_NUM_THREADS=4
+      # Remote VLM API (Qwen 3 VL 4B on master/LM Studio via Tailscale)
+      - DOCLING_VLM_ENDPOINT=http://master.tail5bb17d.ts.net:1234/v1/chat/completions
+      - DOCLING_VLM_MODEL=qwen/qwen3-vl-4b
+      # Required for external VLM API (per official docs)
+      - DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  docling-cache-cpu:

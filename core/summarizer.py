@@ -1,4 +1,4 @@
-"""LLM summarization via OpenAI-compatible API."""
+"""LLM summarization and VLM extraction via OpenAI-compatible API."""
 
 import httpx
 
@@ -14,6 +14,9 @@ from .config import (
 )
 
 log = get_logger("summarizer")
+
+# Content limit for article extraction (larger than summarization)
+ARTICLE_EXTRACTION_CONTENT_LIMIT = 100000  # 100KB of text context
 
 
 def is_enabled() -> bool:
@@ -122,3 +125,78 @@ async def _call_api(messages: list) -> str:
     except (ValueError, KeyError, TypeError) as e:
         log.error(f"Error parsing API response: {e}")
         return f"Summarization error: Invalid response - {e}"
+
+
+async def extract_article_with_vlm(
+    text_content: str,
+    screenshot_b64: str,
+    url: str | None = None
+) -> str:
+    """
+    Convert a web page into clean, well-structured article markdown using VLM.
+
+    Uses both the screenshot (for visual hierarchy/layout understanding) and
+    the raw text content (for actual content extraction) to produce clean markdown.
+
+    This is the core of the browser + VLM extraction pipeline:
+    1. Browser captures screenshot + text dump
+    2. VLM sees the visual layout AND has the text
+    3. VLM outputs clean, structured markdown article
+
+    Args:
+        text_content: Raw text extracted from the DOM
+        screenshot_b64: Base64-encoded screenshot of the page
+        url: Optional URL for context
+
+    Returns:
+        Clean markdown article suitable for chunking
+    """
+    if not text_content and not screenshot_b64:
+        return ""
+
+    # Build comprehensive extraction prompt
+    url_context = f"URL: {url}\n" if url else ""
+
+    system_prompt = f"""{url_context}You are extracting content from a web page. You receive:
+1. A SCREENSHOT showing the visual layout and structure
+2. The RAW TEXT content from the page
+
+Your task: Convert this into a clean, well-structured markdown article.
+
+Guidelines:
+- Use the screenshot to understand what's important (main content vs sidebar/nav/ads)
+- Use proper markdown headings (# ## ###) to reflect the page's hierarchy
+- Extract the MAIN CONTENT, not navigation, ads, or boilerplate
+- Preserve important data: prices, specs, dates, names, facts
+- Keep code blocks, tables, and lists properly formatted
+- Write clean, readable markdown that captures the page's essence
+- If it's an article, preserve the article structure
+- If it's a product page, extract product details systematically
+- If it's documentation, preserve the technical structure
+
+Output ONLY the clean markdown article, no explanations."""
+
+    user_content = []
+
+    # Add screenshot for visual context
+    if screenshot_b64:
+        user_content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"}
+        })
+
+    # Add text content
+    if text_content:
+        truncated_text = text_content[:ARTICLE_EXTRACTION_CONTENT_LIMIT]
+        user_content.append({
+            "type": "text",
+            "text": f"RAW PAGE TEXT:\n\n{truncated_text}"
+        })
+
+    result = await _call_api([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ])
+
+    log.info(f"VLM article extraction: {len(text_content)} chars input → {len(result)} chars output")
+    return result

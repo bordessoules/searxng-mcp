@@ -57,5 +57,10 @@ DOCUMENT_MAX_LENGTH = int(os.getenv("DOCUMENT_MAX_LENGTH", "1000000"))  # 1MB de
 SUMMARIZE_CONTENT_LIMIT = 100000
 SUMMARIZE_VISION_CONTENT_LIMIT = 50000
 
+# Light RAG chunking settings
+CHUNK_SIZE_TOKENS = int(os.getenv("CHUNK_SIZE_TOKENS", "4096"))  # Tokens per chunk
+CACHE_DB_PATH = os.getenv("CACHE_DB_PATH", "~/.cache/mcp-gateway/documents.db")
+CHARS_PER_TOKEN = 4.0  # Approximate chars per token (no HuggingFace dependency)
+
 # HTTP retry settings
 HTTP_MAX_RETRIES = 2

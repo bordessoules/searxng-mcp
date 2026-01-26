@@ -1,13 +1,37 @@
-"""URL analysis and routing logic."""
+"""URL analysis and routing logic.
 
-from urllib.parse import urlparse
+Three-way routing:
+- Images → Vision AI (description)
+- Documents (PDF, Office) → Docling (GPU-accelerated parsing)
+- Web pages → Browser + VLM extraction (handles JS-heavy sites)
+"""
+
+import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 IMAGE_EXTENSIONS = frozenset({'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff'})
-DOCUMENT_EXTENSIONS = frozenset({'.pdf', '.docx', '.pptx', '.xlsx', '.doc', '.xls', '.ppt'})
 
-# URL patterns that indicate PDFs (e.g., arxiv.org/pdf/...)
-PDF_URL_PATTERNS = ('/pdf/', '/pdfs/', '.pdf')
+# Document types that Docling handles well (native parsing, no JS needed)
+DOCUMENT_EXTENSIONS = frozenset({
+    '.pdf',                           # PDFs
+    '.doc', '.docx',                  # Word
+    '.ppt', '.pptx',                  # PowerPoint
+    '.xls', '.xlsx',                  # Excel
+    '.odt', '.ods', '.odp',           # OpenDocument
+    '.rtf',                           # Rich Text
+    '.epub',                          # E-books
+    '.md', '.txt',                    # Plain text/markdown
+})
+
+# URL patterns that indicate PDF even without extension
+# e.g., arxiv.org/pdf/1706.03762 or semanticscholar.org/paper/xyz/pdf
+PDF_URL_PATTERNS = [
+    r'arxiv\.org/pdf/',               # arXiv PDFs
+    r'/pdf$',                         # URLs ending in /pdf
+    r'/pdf/',                         # URLs with /pdf/ in path
+    r'\.pdf\?',                       # .pdf with query params
+]
 
 
 def _get_extension(url: str) -> str:
@@ -17,24 +41,38 @@ def _get_extension(url: str) -> str:
 
 
 def _is_pdf_url(url: str) -> bool:
-    """Check if URL looks like a PDF (even without .pdf extension)."""
-    url_lower = url.lower()
-    return any(pattern in url_lower for pattern in PDF_URL_PATTERNS)
+    """Check if URL matches known PDF patterns (without extension)."""
+    return any(re.search(pattern, url, re.IGNORECASE) for pattern in PDF_URL_PATTERNS)
 
 
 def route(url: str) -> str:
     """
     Determine which handler to use for a URL.
 
-    Returns: 'image', 'document', or 'browser'
+    Returns: 'image', 'document', or 'webpage'
+
+    Three-way routing:
+    - Images (.png, .jpg, etc.) → Vision AI (description)
+    - Documents (.pdf, .docx, etc.) → Docling (GPU parsing, TOC/chunks)
+    - Web pages (everything else) → Browser + VLM extraction
+      - Renders JavaScript
+      - Screenshot + text → VLM → clean markdown
+      - Then local chunking for TOC/chunk navigation
     """
     ext = _get_extension(url)
+
+    # Images go to vision handler
     if ext in IMAGE_EXTENSIONS:
         return "image"
+
+    # Documents go to Docling (native PDF/Office parsing)
     if ext in DOCUMENT_EXTENSIONS:
         return "document"
-    # Check for PDF-like URLs without extension (e.g., arxiv.org/pdf/...)
+
+    # Check for PDF URL patterns (e.g., arxiv.org/pdf/1706.03762)
     if _is_pdf_url(url):
         return "document"
-    # All web pages use browser + vision for consistent quality
-    return "browser"
+
+    # Everything else is a web page - use browser + VLM extraction
+    # This handles: HTML, JS-heavy SPAs, dynamic content, etc.
+    return "webpage"

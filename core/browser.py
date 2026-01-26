@@ -3,6 +3,12 @@ Browser handler using Playwright MCP with Chrome extension.
 
 Connects to your real Chrome browser via the Playwright extension,
 giving you access to all your extensions, logins, and cookies.
+
+This module provides the low-level browser interface:
+- browse(url) → {"content": text, "screenshot": base64, "url": final_url}
+
+The webpage.py module handles the full pipeline:
+browser → VLM extraction → chunking → caching
 """
 
 import asyncio
@@ -13,46 +19,33 @@ from mcp.client.stdio import stdio_client
 
 from .config import (
     BROWSER_JS_RENDER_WAIT,
-    BROWSER_MAX_CONTENT_LENGTH,
     BROWSER_VIEWPORT_HEIGHT,
     BROWSER_VIEWPORT_WIDTH,
     PLAYWRIGHT_HEADLESS,
     PLAYWRIGHT_TOKEN,
 )
 from .logger import get_logger
-from .summarizer import is_enabled, summarize, summarize_with_vision
 
 log = get_logger("browser")
 
 
-async def fetch(url: str, prompt: str | None = None) -> str:
+async def browse(url: str) -> dict:
     """
-    Fetch content using Chrome browser via Playwright MCP extension.
+    Browse a URL using Chrome via Playwright MCP extension.
 
     Uses your real Chrome with all extensions (adblocker, cookie consent, etc.)
-    and existing logins/cookies.
+    and existing logins/cookies. Waits for JavaScript to render.
 
     Args:
         url: The URL to browse
-        prompt: Optional summarization prompt
 
     Returns:
-        Page content, optionally summarized with vision AI
+        Dict with:
+        - content: Text content from the page
+        - screenshot: Base64-encoded screenshot
+        - url: Final URL (after any redirects)
+        - error: Error message if failed (only present on error)
     """
-    result = await _browse(url)
-
-    if "error" in result:
-        return f"Browser error: {result['error']}"
-
-    content = result.get("content", "")
-    screenshot = result.get("screenshot", "")
-    final_url = result.get("url", url)
-
-    return await _format_result(final_url, content, screenshot, prompt)
-
-
-async def _browse(url: str) -> dict:
-    """Connect to Playwright MCP and browse URL using Chrome extension."""
     server_params = _build_server_params()
 
     try:
@@ -79,14 +72,15 @@ async def _browse(url: str) -> dict:
                 content = await _get_snapshot_text(session)
                 screenshot = await _get_screenshot(session)
 
+                log.info(f"Browsed {url}: {len(content)} chars, screenshot={'yes' if screenshot else 'no'}")
                 return {"content": content, "screenshot": screenshot, "url": url}
 
     except FileNotFoundError:
         log.error("npx not found. Please install Node.js: https://nodejs.org/")
-        return {"error": "Node.js/npx not installed"}
+        return {"error": "Node.js/npx not installed", "content": "", "screenshot": "", "url": url}
     except Exception as e:
         log.error(f"Browser navigation failed for {url}: {e}")
-        return {"error": str(e)}
+        return {"error": str(e), "content": "", "screenshot": "", "url": url}
 
 
 def _build_server_params() -> StdioServerParameters:
@@ -125,9 +119,10 @@ async def _get_snapshot_text(session: ClientSession) -> str:
 async def _get_screenshot(session: ClientSession) -> str:
     """Capture screenshot for vision AI."""
     try:
-        result = await session.call_tool("browser_screenshot", {"fullPage": True})
+        # Tool is called browser_take_screenshot in Playwright MCP
+        result = await session.call_tool("browser_take_screenshot", {"fullPage": True})
         if not result or not result.content:
-            result = await session.call_tool("browser_screenshot", {})
+            result = await session.call_tool("browser_take_screenshot", {})
         if not result or not result.content:
             return ""
         for item in result.content:
@@ -136,22 +131,3 @@ async def _get_screenshot(session: ClientSession) -> str:
     except Exception as e:
         log.debug(f"Screenshot failed: {e}")
     return ""
-
-
-async def _format_result(url: str, content: str, screenshot: str, prompt: str | None) -> str:
-    """Format browser result with optional vision summarization."""
-    if is_enabled() and screenshot:
-        body = await summarize_with_vision(content, screenshot, prompt, url=url)
-    elif is_enabled() and prompt:
-        body = await summarize(content, prompt)
-    else:
-        body = _truncate(content)
-
-    return f"**URL:** {url}\n\n{body}"
-
-
-def _truncate(content: str) -> str:
-    """Truncate content if too long."""
-    if len(content) > BROWSER_MAX_CONTENT_LENGTH:
-        return content[:BROWSER_MAX_CONTENT_LENGTH] + "\n\n...(truncated)"
-    return content

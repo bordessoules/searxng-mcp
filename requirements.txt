@@ -8,7 +8,7 @@ mcp[cli]>=1.0.0
 httpx>=0.27.0
 
 # Environment configuration
-python-dotenv>=1.0.0
+python-dotenv>=1.2.2
 
 # Web content extraction (lightweight)
 markdownify>=0.11.0
